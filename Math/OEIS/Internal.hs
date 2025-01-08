@@ -8,15 +8,19 @@ module Math.OEIS.Internal where
 import Control.Arrow (second, (***))
 import Data.Char     (isSpace, toUpper, toLower)
 import Data.List     (intercalate, isPrefixOf, foldl')
-import Network.HTTP  (simpleHTTP, rspBody, rspCode, rqBody, rqHeaders, rqMethod, rqURI, Request(..), RequestMethod(GET))
 import Network.URI   (parseURI, URI)
+
+import qualified Network.HTTP.Client       as HTTP
+import qualified Network.HTTP.Client.TLS   as HTTP
+import qualified Network.HTTP.Types        as HTTP
+import qualified Data.ByteString.Lazy.UTF8 as U
 
 import Math.OEIS.Types
 
 --------------------------------------------------------------------------------
 
 baseSearchURI :: String
-baseSearchURI = "http://oeis.org/search?fmt=text&q="
+baseSearchURI = "https://oeis.org/search?fmt=text&q="
 
 idSearchURI :: String -> String
 idSearchURI n = baseSearchURI ++ "id:" ++ n
@@ -34,20 +38,12 @@ getOEIS toURI key =
 
 get :: URI -> IO (Maybe String)
 get uri = do
-    ersp <- simpleHTTP (request uri)
-    return $ case ersp of
-      Left _ -> Nothing
-      Right rsp
-        | rspCode rsp == (2,0,0) -> Just $ rspBody rsp
-        | otherwise              -> Nothing
-
-request :: URI -> Request String
-request uri = Request
-  { rqURI     = uri
-  , rqMethod  = GET
-  , rqHeaders = []
-  , rqBody    = ""
-  }
+    httpman <- HTTP.newManager HTTP.tlsManagerSettings
+    let request = HTTP.requestFromURI_ uri
+    response <- HTTP.httpLbs request httpman
+    return $ case HTTP.statusIsSuccessful (HTTP.responseStatus response) of
+        False -> Nothing
+        True -> Just (U.toString (HTTP.responseBody response))
 
 readKeyword :: String -> Keyword
 readKeyword = read . capitalize
